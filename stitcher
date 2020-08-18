@@ -1,0 +1,643 @@
+"""
+Pillow
+6.2.1
+HPND
+Alex Clark (PIL Fork Author)
+http://python-pillow.org
+Python Imaging Library (Fork)
+
+The Python Imaging Library (PIL) is
+
+    Copyright © 1997-2011 by Secret Labs AB
+    Copyright © 1995-2011 by Fredrik Lundh
+
+Pillow is the friendly PIL fork. It is
+
+    Copyright © 2010-2020 by Alex Clark and contributors
+
+Like PIL, Pillow is licensed under the open source PIL Software License:
+
+By obtaining, using, and/or copying this software and/or its associated
+documentation, you agree that you have read, understood, and will comply
+with the following terms and conditions:
+
+Permission to use, copy, modify, and distribute this software and its
+associated documentation for any purpose and without fee is hereby granted,
+provided that the above copyright notice appears in all copies, and that
+both that copyright notice and this permission notice appear in supporting
+documentation, and that the name of Secret Labs AB or the author not be
+used in advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+___________________________________________________________________________
+
+
+numpy
+1.17.4
+BSD
+Travis E. Oliphant et al.
+https://www.numpy.org
+NumPy is the fundamental package for array computing with Python.
+
+Copyright (c) 2005-2020, NumPy Developers.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials provided
+       with the distribution.
+
+    * Neither the name of the NumPy Developers nor the names of any
+       contributors may be used to endorse or promote products derived
+       from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+__________________________________________________________________________
+
+opencv-python
+4.2.0.34
+MIT
+UNKNOWN
+https://github.com/skvark/opencv-python
+Wrapper package for OpenCV python bindings.
+
+
+MIT License
+
+Copyright (c) Olli-Pekka Heinisuo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+"""
+Název BP:  Skládání snímků sítnice
+Fakulta: VUT FIT
+Jméno: Vadym Hladyuk
+Login: xhlady01
+Vedoucí: Prof.Ing.,Dipl.-Ing.MARTINDRAHANSKÝ,Ph.D
+datum odevzdání: 28.05.2020
+Hlavním zdrojem programování byla tato kniha Howse, J. a Minichino, J.Learning OpenCV 4 Computer Vision with Python 3.Packt Publishing, Limited, 2020.
+
+"""
+
+
+import cv2
+import numpy as np
+from PIL import Image
+import os
+import collections
+
+extractedImageResult = []
+normalImageResult = []
+dictionaryOfMatches = {}
+
+
+def trim(frame):
+    """
+    function for triming transparent pixels from images, whole row or whole column
+    :param frame: image to trim
+    :return: trimmed image
+    """
+    for start_y in range(1, frame.shape[0]):
+        if np.sum(frame[:start_y]) > 0:
+            start_y -= 1
+            break
+    if start_y == frame.shape[0]:
+        if len(frame.shape) == 2:
+            return np.zeros((0, 0))
+        else:
+            return np.zeros((0, 0, 0))
+    for trim_bottom in range(1, frame.shape[0]):
+        if np.sum(frame[-trim_bottom:]) > 0:
+            break
+
+    for start_x in range(1, frame.shape[1]):
+        if np.sum(frame[:, :start_x]) > 0:
+            start_x -= 1
+            break
+    for trim_right in range(1, frame.shape[1]):
+        if np.sum(frame[:, -trim_right:]) > 0:
+            break
+
+    end_y = frame.shape[0] - trim_bottom + 1
+    end_x = frame.shape[1] - trim_right + 1
+
+    return frame[start_y:end_y, start_x:end_x]
+
+def detectAndDescribe(image):
+    """
+    Compute key points and feature descriptors using an KAZE method
+    :param image: image to detect and desribe by KAZE method
+    :return: keypoints and deskriptors
+    """
+    descriptor = cv2.KAZE_create(extended=True, nOctaves=8, nOctaveLayers=8)
+
+    # get keypoints and descriptors
+    (kps, features) = descriptor.detectAndCompute(image, None, )
+
+    return (kps, features)
+
+def createMatcher(crossCheck):
+    """
+    creating bruteForce matcher
+    :param crossCheck: false parametr
+    :return: bruteForce matcher
+    """
+    bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=crossCheck)
+
+    return bf
+
+def matchKeyPointsBF(featuresA, featuresB):
+    """
+    brute force matching
+    :param featuresA: features of image A
+    :param featuresB: features of image B
+    :return: pair of matche and number of pairs
+    """
+
+    bf = createMatcher(crossCheck=False)
+
+
+    pairs_of_matches = bf.knnMatch(featuresA, featuresB, 2)
+    pairs_of_matches = sorted(pairs_of_matches, key=lambda x: x[0].distance)
+    pairs_of_matches = [x[0] for x in pairs_of_matches
+                            if len(x) > 1 and x[0].distance < 0.7 * x[1].distance]
+
+    return pairs_of_matches, len(pairs_of_matches)
+
+def getHomography(kpsA, kpsB, matches, reprojThresh, confidence):
+    """
+    calculating homography between two images
+    :param kpsA: keypoints from image A
+    :param kpsB: keypoints from image B
+    :param matches: matches between two images
+    :param reprojThresh: Maximum allowed reprojection error to treat a point pair as an inlier
+    :param confidence: Confidence level
+    :return: returns Homography
+    """
+    # convert the keypoints to numpy arrays
+    kpsA = np.float32([kp.pt for kp in kpsA])
+    kpsB = np.float32([kp.pt for kp in kpsB])
+
+    # construct the two sets of points
+    ptsA = np.float32([kpsA[m.queryIdx] for m in matches])
+    ptsB = np.float32([kpsB[m.trainIdx] for m in matches])
+
+    # estimate the homography between the sets of points by method ransac
+    (H, status) = cv2.findHomography(ptsA, ptsB, cv2.RANSAC, reprojThresh, 0, 1000000, confidence)
+
+    return (H, status)
+
+def convertor(source, dest):
+    """
+    inspired by: https://answers.opencv.org/question/208097/exercise-problem-bitwise-operations/ , https://docs.opencv.org/4.1.2/d0/d86/tutorial_py_image_arithmetics.html and
+    https://stackoverflow.com/questions/14063070/overlay-a-smaller-image-on-a-larger-image-python-opencv
+
+    solving issue with RGBA and BGRA models
+    :param source: input image
+    :param dest:
+    :return:output image with fixed models
+    """
+    rows, cols, channel = source.shape  # first we need to get the shape of the source image
+    roi = dest[0:rows, 0:cols]  # then from that source image shape we need to cut out from the dest
+    img2gray = cv2.cvtColor(source, cv2.COLOR_BGR2GRAY)  # convert source to gray, for just making the mask
+    ret, mask = cv2.threshold(img2gray, 10, 255,
+                              cv2.THRESH_BINARY)  # now threshold the image, we got binary image, with actual image black and alpha chanel to white
+    mask_inv = cv2.bitwise_not(mask)  # after that we need to invert the selection
+    img1_bg = cv2.bitwise_and(roi, roi,
+                              mask=mask_inv)  # taking and of the dest cut oout with the mask so we got image below the mask
+    img2_fg = cv2.bitwise_and(source, source, mask=mask)  # same with the source this time with the mask
+    dst = cv2.add(img1_bg, img2_fg)  # adding different images to one
+    dest[0:rows, 0:cols] = dst  # setting to actual image
+
+    return dest
+
+def cropBlackBorders(directory):
+    """
+    croping black borders by images in whole directory
+    :param directory: directory with images with borders to crop
+    """
+    for filename in os.listdir(directory):
+        if filename.endswith(".png"):
+            src = cv2.imread(directory + "/" + filename, 1)
+            tmp = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+            _, alpha = cv2.threshold(tmp, 0, 255, cv2.THRESH_BINARY)
+            b, g, r = cv2.split(src)
+            rgba = [b, g, r, alpha]
+            dst = cv2.merge(rgba, 4)
+            for x in dst:
+                for y in x:
+                    if ((y[0] < 17) & (y[1] < 17) & (y[2] < 17)):
+                        y[3] = 0
+
+            cv2.imwrite(directory + "/" + filename, dst)
+
+def overlayExtractedVesselsWithBlackBorder(directory):
+    """
+    extracted images do not have black borders so I need to add black borders so I can crop them, issue is that extracted
+    images have same background like a all background color
+    :param directory: directory with images to place a black border over imagess
+    """
+    img2 = mask
+    h, w, c = img2.shape
+
+    for filename in os.listdir(directory):
+        if filename.endswith(".png"):
+            img1 = cv2.imread(extractedVesselsDirectory + "/" + filename, -1)
+            img1 = cv2.resize(img1, (w, h), interpolation=cv2.INTER_CUBIC)
+            result = np.zeros((h, w, 3), np.uint8)
+
+            alpha = img2[:, :, 3] / 255.0
+            result[:, :, 0] = (1. - alpha) * img1[:, :, 0] + alpha * img2[:, :, 0]
+            result[:, :, 1] = (1. - alpha) * img1[:, :, 1] + alpha * img2[:, :, 1]
+            result[:, :, 2] = (1. - alpha) * img1[:, :, 2] + alpha * img2[:, :, 2]
+
+            cv2.imwrite(extractedVesselsDirectory + "/" + filename, result)
+
+def convertToPng(directory):
+    """
+    In whole program I am working with png format photo so I need to convert to png format
+    :param directory: directory with images to convert to png
+    """
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg"):
+            im = Image.open(extractedVesselsDirectory + "/" + filename)
+            im.save(extractedVesselsDirectory + "/" + filename[:-3] + "png")
+            os.remove(extractedVesselsDirectory + "/" + filename)
+
+def stitchingNormalImages(trainImgExtracted, queryImgExtracted, trainImgNormal, queryImgNormal, H):
+    """
+    Function for stitching single nonextracted images
+    :param trainImgExtracted: extracted trainImg
+    :param queryImgExtracted: extracted queryImg
+    :param trainImgNormal: normal trainImg
+    :param queryImgNormal: normal queryImg
+    :param H: transformation matrix for images
+    :return: size of image and stitching nonextracted images images
+    """
+    height = trainImgExtracted.shape[0] + queryImgExtracted.shape[0]
+    width = trainImgExtracted.shape[1] + queryImgExtracted.shape[1]
+    dim = (queryImgExtracted.shape[1], queryImgExtracted.shape[0])
+
+    trainImgNormal = cv2.resize(trainImgNormal, dim)
+
+    dim = (trainImgNormal.shape[1], trainImgNormal.shape[0])
+
+    queryImgNormal = cv2.resize(queryImgNormal, dim)
+
+    result = cv2.warpPerspective(trainImgNormal, H, (width, height), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
+
+    result = convertor(queryImgNormal, result)
+
+    RGBA_result = cv2.cvtColor(result, cv2.COLOR_BGRA2RGBA)
+
+    im = Image.fromarray(trim(RGBA_result))
+    width, height = im.size
+
+    return (width * height), im
+
+def stitchingExtractedImages(trainImgExtracted, queryImgExtracted, H):
+    """
+    Function for stitching single extracted images
+    :param trainImgExtracted: extracted trainImg
+    :param queryImgExtracted: extracted queryImg
+    :param H: transformation matrix for images
+    :return: size of image and stitching extracted images images
+    """
+    height = trainImgExtracted.shape[0] + queryImgExtracted.shape[0]
+    width = trainImgExtracted.shape[1] + queryImgExtracted.shape[1]
+
+    result = cv2.warpPerspective(trainImgExtracted, H, (width, height), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
+
+    result = convertor(queryImgExtracted, result)
+
+    RGBA_result = cv2.cvtColor(result, cv2.COLOR_BGRA2RGBA)
+
+    im = Image.fromarray(trim(RGBA_result))
+    width, height = im.size
+
+    return width*height, im
+
+def showKeypointsMatches(x,y,trainImg, kpsA, queryImg, kpsB, matches):
+    """
+    function to show matches
+    """
+    img3 = cv2.drawMatches(trainImg, kpsA, queryImg, kpsB, matches[:25], None,
+                           flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    cv2.imwrite("keypoints" + str(x) + str(y) + ".png", img3)
+
+
+mask = cv2.imread("mask.png", -1) #loading mask
+extractedVesselsDirectory = 'setExtractedPhoto' #setting directory with extracted photos
+normalPhotosDirectory = 'setNormalPhoto' #setting directory with normal photos
+
+#preprocesing, converting, croping etc.
+convertToPng(extractedVesselsDirectory)
+convertToPng(normalPhotosDirectory)
+print("Converted to png...")
+overlayExtractedVesselsWithBlackBorder(extractedVesselsDirectory)
+cropBlackBorders(extractedVesselsDirectory)
+cropBlackBorders(normalPhotosDirectory)
+print("Croped black backgrounds...")
+
+extractedVessels = []
+normalPhotos = []
+structureOfData = []
+
+#loading all the images
+for filename in os.listdir(extractedVesselsDirectory):
+    if filename.endswith(".png") or filename.endswith(".jpg"):
+        extractedVessels.append(extractedVesselsDirectory + "/" + filename)
+
+#loading all the images
+for filename in os.listdir(normalPhotosDirectory):
+    if filename.endswith(".png") or filename.endswith(".jpg"):
+        normalPhotos.append(normalPhotosDirectory + "/" + filename)
+
+extractedVessels.sort()
+normalPhotos.sort()
+print("Images loaded...")
+
+print("Stitching begins...")
+
+
+"""
+first loop to find best possible duos of image and saving them to the directoryOfMatches
+"""
+for x in range(0, extractedVessels.__len__()):
+    for y in range(0, extractedVessels.__len__()):
+        if x == y:
+            continue
+
+
+        trainImg = cv2.imread(extractedVessels[x], cv2.IMREAD_UNCHANGED)
+        queryImg = cv2.imread(extractedVessels[y], cv2.IMREAD_UNCHANGED)
+
+        trainImg = cv2.cvtColor(trainImg, cv2.COLOR_RGB2RGBA)
+        trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGBA2GRAY)
+
+
+        queryImg = cv2.cvtColor(queryImg, cv2.COLOR_RGB2RGBA)
+        queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGBA2GRAY)
+
+
+        kpsA, featuresA = detectAndDescribe(trainImg_gray)
+        kpsB, featuresB = detectAndDescribe(queryImg_gray)
+
+        matches, numberOfMatches = matchKeyPointsBF(featuresA, featuresB)
+
+        #if you want images with 2 images and their matches uncomment this
+        #showKeypointsMatches(x,y,trainImg, kpsA, queryImg, kpsB, matches)
+
+        if numberOfMatches >= 200:
+            print(str(x) + " and " +str(y) + " added to dictionaryOfMatches")
+            dictionaryOfMatches[str(x)+str(y)] = {'numberOfMatches': numberOfMatches, 'xth':x, 'yth':y}
+
+dictionaryOfMatches = collections.OrderedDict(sorted(dictionaryOfMatches.items(), key=lambda x: x[1]['numberOfMatches'], reverse=True))
+
+"""
+filtering and trying to find unique duos
+"""
+i = 0
+while i < normalPhotos.__len__():
+    res = dict(filter(lambda item: str(i) in item[0], dictionaryOfMatches.items()))
+    res = collections.OrderedDict(sorted(res.items(), key=lambda x: x[1]['numberOfMatches'], reverse=True))
+    resKey = res.keys()
+    if resKey.__len__() > 0:
+        resKey = list(resKey)[0]
+        res.pop(resKey)
+        resKey = res.keys()
+    for key in list(resKey):
+        try:
+            dictionaryOfMatches.pop(key)
+        except KeyError:
+            pass
+    i = i + 1
+
+
+if dictionaryOfMatches.__len__() == 0:
+    print("Can not stitch any photos")
+    exit(1)
+
+"""
+loop for stitching of best unique duos
+"""
+for key, value in dictionaryOfMatches.items():
+
+    trainImgExtracted = cv2.imread(extractedVessels[value.get('xth')], cv2.IMREAD_UNCHANGED)
+    queryImgExtracted = cv2.imread(extractedVessels[value.get('yth')], cv2.IMREAD_UNCHANGED)
+    trainImgNormal = cv2.imread(normalPhotos[value.get('xth')], cv2.IMREAD_UNCHANGED)
+    queryImgNormal = cv2.imread(normalPhotos[value.get('yth')], cv2.IMREAD_UNCHANGED)
+
+
+    trainImgExtractedGray = cv2.cvtColor(trainImgExtracted, cv2.COLOR_RGBA2GRAY)
+    queryImgExtractedGray = cv2.cvtColor(queryImgExtracted, cv2.COLOR_RGBA2GRAY)
+
+    kpsA, featuresA = detectAndDescribe(trainImgExtractedGray)
+    kpsB, featuresB = detectAndDescribe(queryImgExtractedGray)
+
+    matches, numberOfMatches = matchKeyPointsBF(featuresA, featuresB)
+
+    (H, status) = getHomography(kpsA, kpsB, matches, reprojThresh=4, confidence=0.70)
+
+    if H is None:
+        print("Failed to calculate transformation matrix!")
+        exit(1)
+
+    sizeNormal, imageNormal = stitchingNormalImages(trainImgExtracted, queryImgExtracted, trainImgNormal, queryImgNormal, H)
+    sizeExtracted, imageExtracted = stitchingExtractedImages(trainImgExtracted, queryImgExtracted, H)
+
+    trainImgExtracted = cv2.imread(extractedVessels[value.get('yth')], cv2.IMREAD_UNCHANGED)
+    queryImgExtracted = cv2.imread(extractedVessels[value.get('xth')], cv2.IMREAD_UNCHANGED)
+    trainImgNormal = cv2.imread(normalPhotos[value.get('yth')], cv2.IMREAD_UNCHANGED)
+    queryImgNormal = cv2.imread(normalPhotos[value.get('xth')], cv2.IMREAD_UNCHANGED)
+
+    trainImgExtractedGray = cv2.cvtColor(trainImgExtracted, cv2.COLOR_RGBA2GRAY)
+    queryImgExtractedGray = cv2.cvtColor(queryImgExtracted, cv2.COLOR_RGBA2GRAY)
+
+    kpsA, featuresA = detectAndDescribe(trainImgExtractedGray)
+    kpsB, featuresB = detectAndDescribe(queryImgExtractedGray)
+
+    matches, numberOfMatches = matchKeyPointsBF(featuresA, featuresB)
+
+    (H, status) = getHomography(kpsA, kpsB, matches, reprojThresh=4, confidence=0.70)
+
+    if H is None:
+        print("Failed to calculate transformation matrix!")
+        exit(1)
+
+    sizeNormal2, imageNormal2 = stitchingNormalImages(queryImgExtracted, trainImgExtracted, queryImgNormal, trainImgNormal, H)
+    sizeExtracted2, imageExtracted2 = stitchingExtractedImages(queryImgExtracted, trainImgExtracted, H)
+
+
+    """checking if did not happend stretching efect, when while stitching images one image is unusually stratched"""
+    if sizeNormal2 < sizeNormal < sizeNormal2 * 2.5:
+        imageNormal.save("result" + str(key) + ".png")
+
+        normalImageResult.append(np.array(imageNormal))
+        extractedImageResult.append(np.array(imageExtracted))
+    else:
+        imageNormal2.save("result" + str(key) + ".png")
+
+        normalImageResult.append(np.array(imageNormal2))
+        extractedImageResult.append(np.array(imageExtracted2))
+
+bestChoice = [0, 0, 0]
+normalImageResult.reverse()
+extractedImageResult.reverse()
+"""
+if I have only one duos of image I save it as a result and end program
+"""
+if extractedImageResult.__len__()==1:
+    result = normalImageResult.pop(0)
+    result = np.array(result)
+    result = cv2.cvtColor(result, 0)
+    im = im = Image.fromarray(result)
+    im.save("result.png")
+    exit(0)
+
+"""
+another loop while I have more pairs of images stitched
+"""
+while extractedImageResult.__len__() > 1:
+    trainImgExtracted = extractedImageResult.pop(0)
+    trainImgExtracted = cv2.cvtColor(trainImgExtracted, cv2.COLOR_RGB2RGBA)
+    trainImgExtracted = np.array(trainImgExtracted)
+    trainImg_gray = cv2.cvtColor(trainImgExtracted, cv2.COLOR_RGBA2GRAY)
+    im = im = Image.fromarray(trainImgExtracted)
+    im = im = Image.fromarray(trainImg_gray)
+    trainImgNormal = normalImageResult.pop(0)
+    trainImgNormal = np.array(trainImgNormal)
+    trainImgNormal = cv2.cvtColor(trainImgNormal, cv2.COLOR_RGB2RGBA)
+    im = im = Image.fromarray(trainImgNormal)
+
+    queryImg = extractedImageResult.pop(0)
+    queryImg = np.array(queryImg)
+
+    queryImg = cv2.cvtColor(queryImg, 0)
+    im = im = Image.fromarray(queryImg)
+
+    queryImgNormal = normalImageResult.pop(0)
+    queryImgNormal = np.array(queryImgNormal)
+    queryImgNormal = cv2.cvtColor(queryImgNormal, 0)
+    im = im = Image.fromarray(queryImgNormal)
+
+    queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGBA2GRAY)
+    im = im = Image.fromarray(queryImg_gray)
+
+    kpsA, featuresA = detectAndDescribe(trainImg_gray)
+    kpsB, featuresB = detectAndDescribe(queryImg_gray)
+
+    matches, numberOfMatches = matchKeyPointsBF(featuresA, featuresB)
+
+
+    (H, status) = getHomography(kpsA, kpsB, matches, reprojThresh=4, confidence=0.70)
+
+    if H is None:
+        print("Failed to calculate transformation matrix!")
+        exit(1)
+
+    bestChoice[0] = numberOfMatches
+    bestChoice[2] = H
+
+    sizeNormal, imageNormal = stitchingExtractedImages(trainImgNormal, queryImgNormal, bestChoice[2], )
+
+    sizeExtracted, imageExtracted = stitchingExtractedImages(np.array(trainImgExtracted), queryImg, bestChoice[2])
+
+    temp = trainImg_gray
+    trainImg_gray = queryImg_gray
+    queryImg_gray = temp
+    temp = trainImgNormal
+    trainImgNormal = queryImgNormal
+    queryImgNormal = temp
+
+    kpsA, featuresA = detectAndDescribe(trainImg_gray)
+    kpsB, featuresB = detectAndDescribe(queryImg_gray)
+
+    matches, numberOfMatches = matchKeyPointsBF(featuresA, featuresB)
+
+
+    (H, status) = getHomography(kpsA, kpsB, matches, reprojThresh=4, confidence=0.70)
+
+    if H is None:
+        print("Failed to calculate transformation matrix!")
+        exit(1)
+
+    bestChoice[0] = numberOfMatches
+    bestChoice[2] = H
+    sizeNormal2, imageNormal2 = stitchingNormalImages(np.array(trainImgExtracted), queryImg,
+                                                      trainImgNormal, queryImgNormal, bestChoice[2])
+
+    sizeExtracted2, imageExtracted2 = stitchingExtractedImages(queryImg, np.array(trainImgExtracted), bestChoice[2])
+
+
+    """checking if did not happend stretching efect, when while stitching images one image is unusually stratched"""
+    if sizeNormal2 < sizeNormal < sizeNormal2 * 2.2:
+        imageNormalResult = np.array(imageNormal)
+        imageNormal = cv2.cvtColor(imageNormalResult, cv2.COLOR_RGBA2BGRA)
+
+        imageExtracted = np.array(imageExtracted)
+        imageExtracted = cv2.cvtColor(imageExtracted, cv2.COLOR_RGBA2BGRA)
+
+        normalImageResult.append(imageNormal)
+        extractedImageResult.append(imageExtracted)
+        if normalImageResult.__len__() == 1:
+            im = im = Image.fromarray(imageNormal)
+            im.save("result.png")
+            exit(0)
+
+    else:
+        imageNormal2Result = np.array(imageNormal2)
+        imageNormal2 = cv2.cvtColor(imageNormal2Result, cv2.COLOR_RGBA2BGRA)
+        imageExtracted2 = np.array(imageExtracted2)
+        imageExtracted2 = cv2.cvtColor(imageExtracted2, cv2.COLOR_RGBA2BGRA)
+
+        normalImageResult.append(imageNormal2)
+        extractedImageResult.append(imageExtracted2)
+        if normalImageResult.__len__() == 1:
+            im = im = Image.fromarray(imageNormal2)
+            im.save("result.png")
+            exit(0)
+
